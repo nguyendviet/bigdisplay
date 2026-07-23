@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#ffffff">
+<title>Big Display</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    overflow: hidden; position: fixed; inset: 0;
+    -webkit-user-select: none; user-select: none;
+    -webkit-touch-callout: none; touch-action: manipulation;
+    background: #fff;
+  }
+
+  #display {
+    position: fixed; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    background: #ffffff;
+  }
+
+  #text {
+    font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", "Arial Black", Arial, sans-serif;
+    font-weight: 900;
+    line-height: 1;
+    white-space: nowrap;
+    color: #000000;
+    /* No transition here on purpose: each number/word must show its exact
+       target color the instant it appears, not fade in from the last one. */
+  }
+
+  .ctrl-btn {
+    position: fixed;
+    bottom: max(20px, env(safe-area-inset-bottom));
+    width: 60px; height: 60px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(128,128,128,0.30);
+    font-size: 26px;
+    display: flex; align-items: center; justify-content: center;
+    padding: 0; line-height: 1;
+    z-index: 30;
+    cursor: pointer;
+  }
+  .ctrl-btn:active { background: rgba(128,128,128,0.5); }
+
+  #modeBtn { left: max(20px, env(safe-area-inset-left)); }
+  #bgBtn   { left: 50%; transform: translateX(-50%); }
+  #playBtn { right: max(20px, env(safe-area-inset-right)); }
+</style>
+</head>
+<body>
+
+  <div id="display">
+    <div id="text"></div>
+  </div>
+
+  <button id="modeBtn" class="ctrl-btn" aria-label="Toggle numbers or colors">&#127912;</button>
+  <button id="bgBtn" class="ctrl-btn" aria-label="Toggle background">&#9729;&#65039;</button>
+  <button id="playBtn" class="ctrl-btn" aria-label="Start or stop">&#9654;&#65039;</button>
+
+<script>
+(function () {
+  // ---- Colors: separate shades tuned for white vs black backgrounds ----
+  var COLORS = [
+    { name: 'RED',   onWhite: '#E4002B', onBlack: '#FF453A' },
+    { name: 'GREEN', onWhite: '#00793D', onBlack: '#30D158' },
+    { name: 'BLUE',  onWhite: '#0033CC', onBlack: '#409CFF' }
+  ];
+
+  var state = {
+    mode: 'number',      // 'number' | 'color'
+    bg: 'white',         // 'white' | 'black'
+    running: false,
+    displayValue: null    // null (blank) | {type:'number', value:n} | {type:'color', idx:i}
+  };
+
+  var displayEl = document.getElementById('display');
+  var textEl = document.getElementById('text');
+  var modeBtn = document.getElementById('modeBtn');
+  var bgBtn = document.getElementById('bgBtn');
+  var playBtn = document.getElementById('playBtn');
+  var themeColorMeta = document.querySelector('meta[name="theme-color"]');
+  var intervalId = null;
+
+  function fitText() {
+    if (!textEl.textContent) return;
+    var maxWidth = window.innerWidth * 0.92;
+    var maxHeight = window.innerHeight * 0.82;
+    var lo = 10, hi = 4000;
+    for (var i = 0; i < 20; i++) {
+      var mid = Math.floor((lo + hi) / 2);
+      textEl.style.fontSize = mid + 'px';
+      var rect = textEl.getBoundingClientRect();
+      if (rect.width <= maxWidth && rect.height <= maxHeight) lo = mid; else hi = mid;
+    }
+    textEl.style.fontSize = lo + 'px';
+  }
+
+  function render() {
+    var bgColor = state.bg === 'white' ? '#ffffff' : '#000000';
+    displayEl.style.background = bgColor;
+    if (themeColorMeta) themeColorMeta.setAttribute('content', bgColor);
+
+    if (!state.displayValue) {
+      textEl.textContent = '';
+      return;
+    }
+    if (state.displayValue.type === 'number') {
+      textEl.textContent = String(state.displayValue.value);
+      textEl.style.color = state.bg === 'white' ? '#000000' : '#ffffff';
+    } else {
+      var c = COLORS[state.displayValue.idx];
+      textEl.textContent = c.name;
+      textEl.style.color = state.bg === 'white' ? c.onWhite : c.onBlack;
+    }
+    fitText();
+  }
+
+  function tick() {
+    if (state.mode === 'number') {
+      state.displayValue = { type: 'number', value: Math.floor(Math.random() * 99) + 1 };
+    } else {
+      // Avoid drawing the same color twice in a row. With only 3 options,
+      // a plain independent random draw repeats the previous word about
+      // 1 time in 3 -- since nothing changes on screen when that happens,
+      // it looks exactly like that word "stuck" for 2 seconds instead of 1.
+      var prevIdx = (state.displayValue && state.displayValue.type === 'color') ? state.displayValue.idx : -1;
+      var idx;
+      do {
+        idx = Math.floor(Math.random() * COLORS.length);
+      } while (idx === prevIdx);
+      state.displayValue = { type: 'color', idx: idx };
+    }
+    render();
+  }
+
+  function startSequence() {
+    state.running = true;
+    playBtn.textContent = '\u23F9\uFE0F'; // stop icon
+    tick();
+    intervalId = setInterval(tick, 1000);
+  }
+
+  function stopSequence() {
+    state.running = false;
+    playBtn.textContent = '\u25B6\uFE0F'; // play icon
+    clearInterval(intervalId);
+    intervalId = null;
+    state.displayValue = null;
+    render(); // blank screen, current background color kept
+  }
+
+  playBtn.addEventListener('click', function () {
+    if (state.running) stopSequence(); else startSequence();
+  });
+
+  modeBtn.addEventListener('click', function () {
+    state.mode = state.mode === 'number' ? 'color' : 'number';
+    modeBtn.textContent = state.mode === 'number' ? '\u{1F3A8}' : '\u{1F522}'; // shows the OTHER mode as the next tap target
+    // Deliberately does NOT touch the timer or force a redraw here.
+    // The master interval (started once by "start", stopped once by "stop")
+    // keeps ticking on its own untouched schedule; this just changes what
+    // the next already-scheduled tick will draw, so every item on screen
+    // -- before, during, and after a mode switch -- gets exactly 1 second,
+    // with no reset and no skipped/stretched beat.
+  });
+
+  bgBtn.addEventListener('click', function () {
+    state.bg = state.bg === 'white' ? 'black' : 'white';
+    bgBtn.textContent = state.bg === 'white' ? '\u2601\uFE0F' : '\u2600\uFE0F'; // shows the OTHER background as the next tap target
+    render(); // just recolors whatever is currently on screen, doesn't redraw/advance the sequence
+  });
+
+  // ---- Keep the screen awake while this is open ----
+  var wakeLock = null;
+  function requestWakeLock() {
+    if ('wakeLock' in navigator) {
+      navigator.wakeLock.request('screen').then(function (lock) { wakeLock = lock; }).catch(function () {});
+    }
+  }
+  requestWakeLock();
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'visible') requestWakeLock();
+  });
+  document.addEventListener('touchstart', function () {
+    if (!wakeLock) requestWakeLock();
+  }, { passive: true, once: true });
+
+  var resizeTimer;
+  window.addEventListener('resize', function () {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(fitText, 80);
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>
